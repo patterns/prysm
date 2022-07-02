@@ -2,6 +2,8 @@ package p2p
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -12,19 +14,45 @@ import (
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
+func newLocalListener(t testing.TB) net.Listener {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Helper()
+		t.Fatal(err)
+	}
+	return ln
+}
+
+func closeListener(t testing.TB, l net.Listener) {
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Test `verifyConnectivity` function by trying to connect to google.com (successfully)
 // and then by connecting to an unreachable IP and ensuring that a log is emitted
 func TestVerifyConnectivity(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	hook := logTest.NewGlobal()
+	ln := newLocalListener(t)
+	defer closeListener(t, ln)
+	lnAd, lnPort, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	testPort, err := strconv.Atoi(lnPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cases := []struct {
 		address              string
 		port                 uint
 		expectedConnectivity bool
 		name                 string
 	}{
-		{"142.250.68.46", 80, true, "Dialing a reachable IP: 142.250.68.46:80"}, // google.com
-		{"123.123.123.123", 19000, false, "Dialing an unreachable IP: 123.123.123.123:19000"},
+		{lnAd, uint(testPort), true, "Dial reachable IP: " + ln.Addr().String()},
+		{"198.18.0.254", 0, false, "Dialing an unreachable IP: 198.18.0.254:0"},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf(tc.name),
